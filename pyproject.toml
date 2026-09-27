@@ -1,0 +1,32 @@
+[project]
+name = "knowledge-agent"
+version = "0.1.0"
+description = "Autonomous Knowledge Execution Agent — IT Helpdesk"
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "chromadb>=0.5.0",
+    "sentence-transformers>=3.0.0",
+    "groq>=0.9.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+    "aiofiles>=23.2.0",
+    "python-multipart>=0.0.9",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.5.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+]
+
+[project.scripts]
+ingest = "scripts.ingest:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

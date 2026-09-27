@@ -1,0 +1,14 @@
+.env
+chroma_db/
+uploads/*
+!uploads/.gitkeep
+audit_log.jsonl
+tickets.jsonl
+__pycache__/
+.venv/
+*.pyc
+*.pyo
+.DS_Store
+*.egg-info/
+dist/
+.pytest_cache/
