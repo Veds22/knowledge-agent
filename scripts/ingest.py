@@ -3,7 +3,7 @@
     Run: uv run python scripts/ingest.py
 """
 
-from __future__ import annontations
+from __future__ import annotations
 
 import asyncio
 import logging 
@@ -33,7 +33,7 @@ async def ingest_all() -> None:
     client = chromadb.PersistentClient(path=str(settings.chroma_path))
     kb = client.get_or_create_collection(
         name="kb_collection",
-        metadata={"hnsw:space": 12}
+        metadata={"hnsw:space": "l2"}
     )
     
     md_files = sorted(settings.kb_path.glob('*.md'))

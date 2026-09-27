@@ -117,7 +117,7 @@ async def store_turn(
             metadatas  = [meta],
         )
  
-     try:
+    try:
         await loop.run_in_executor(None, _upsert)
         log.debug("Memory turn stored: turn_id=%s session=%s action=%s", turn_id, session_id, action.value)
     except Exception as exc:

@@ -143,9 +143,6 @@ async def planner_node(state: AgentState) -> dict:
 
 _tool_node = ToolNode(
     tools=ALL_TOOLS,
-    input_key="tool_input",
-    output_key="tool_output",
-    log=log,
 )
  
 async def tool_executor_node(state: AgentState) -> dict:

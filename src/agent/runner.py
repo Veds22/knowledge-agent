@@ -116,7 +116,7 @@ async def run_agent(
     if current_node == "hitl_approval":
         log.info("Graph interrupted at hitl_approval — awaiting user decision.")
         
-     plan = final_state.get("plan") or PlanTrace(goal=req.query, reasoning="", steps=[])
+        plan = final_state.get("plan") or PlanTrace(goal=req.query, reasoning="", steps=[])
         return AgentResponse(
             session_id      = req.session_id,
             plan            = plan,
@@ -155,7 +155,7 @@ async def run_agent(
     return response
 
 
-sync def resume_agent(
+async def resume_agent(
     session_id: str,
     approved: bool,
     approved_by: str,
