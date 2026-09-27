@@ -5,6 +5,7 @@ Tabs: Chat | Upload KB | Audit Log
 import json
 import time
 from datetime import datetime
+from uuid import uuid4
 
 import requests
 import streamlit as st
@@ -23,6 +24,111 @@ if "session_id"      not in st.session_state: st.session_state.session_id      =
 if "messages"        not in st.session_state: st.session_state.messages        = []
 if "pending_action"  not in st.session_state: st.session_state.pending_action  = None   # action_id awaiting approval
 if "last_plan"       not in st.session_state: st.session_state.last_plan       = None
+if "session_history"  not in st.session_state: st.session_state.session_history = {}
+if "history_loaded"   not in st.session_state: st.session_state.history_loaded  = False
+
+
+def _load_persisted_sessions() -> None:
+    try:
+        response = requests.get(f"{API}/audit-log", params={"page": 1, "size": 100}, timeout=5)
+        response.raise_for_status()
+        entries = response.json().get("entries", [])
+    except requests.RequestException:
+        return
+
+    grouped = {}
+    for entry in reversed(entries):
+        session_id = entry.get("session_id")
+        query = entry.get("query", "")
+        if not session_id or session_id == "approval-endpoint" or query.startswith("HITL approval:"):
+            continue
+        messages = grouped.setdefault(session_id, [])
+        messages.append({"role": "user", "content": query})
+        if entry.get("answer"):
+            messages.append({"role": "assistant", "content": entry["answer"], "data": {}})
+
+    for session_id, messages in grouped.items():
+        st.session_state.session_history[session_id] = {
+            "messages": messages,
+            "pending_action": None,
+        }
+
+
+if not st.session_state.history_loaded:
+    _load_persisted_sessions()
+    st.session_state.history_loaded = True
+
+
+def _save_current_session() -> None:
+    if st.session_state.messages:
+        st.session_state.session_history[st.session_state.session_id] = {
+            "messages": list(st.session_state.messages),
+            "pending_action": st.session_state.pending_action,
+        }
+
+
+def _open_session(session_id: str) -> None:
+    _save_current_session()
+    saved = st.session_state.session_history[session_id]
+    st.session_state.session_id = session_id
+    st.session_state.messages = list(saved["messages"])
+    st.session_state.pending_action = saved["pending_action"]
+    st.session_state.last_plan = None
+
+
+@st.dialog("Approval required")
+def _approval_dialog() -> None:
+    st.warning(
+        "This request requires escalation to senior IT. "
+        "Review the request and choose whether to approve or reject it."
+    )
+    approve, reject = st.columns(2)
+
+    with approve:
+        if st.button("Approve", type="primary", use_container_width=True):
+            try:
+                response = requests.post(
+                    f"{API}/approve",
+                    json={"action_id": st.session_state.pending_action, "approved": True},
+                    timeout=60,
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": data.get("answer", "Escalation executed."),
+                        "data": data,
+                    })
+                    st.session_state.pending_action = None
+                    _save_current_session()
+                    st.rerun()
+                else:
+                    st.error(response.json().get("detail", {}).get("message", response.text))
+            except requests.RequestException as exc:
+                st.error(f"Could not reach API: {exc}")
+
+    with reject:
+        if st.button("Reject", use_container_width=True):
+            try:
+                response = requests.post(
+                    f"{API}/approve",
+                    json={"action_id": st.session_state.pending_action, "approved": False},
+                    timeout=60,
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": data.get("answer", "Escalation cancelled."),
+                        "data": data,
+                    })
+                    st.session_state.pending_action = None
+                    _save_current_session()
+                    st.rerun()
+                else:
+                    st.error(response.json().get("detail", {}).get("message", response.text))
+            except requests.RequestException as exc:
+                st.error(f"Could not reach API: {exc}")
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -34,11 +140,30 @@ with st.sidebar:
     st.markdown("**Session**")
     st.code(st.session_state.session_id, language=None)
     if st.button("🔄 New Session", use_container_width=True):
-        st.session_state.session_id     = f"sess_{int(time.time())}"
+        _save_current_session()
+        st.session_state.session_id     = f"sess_{uuid4().hex[:10]}"
         st.session_state.messages       = []
         st.session_state.pending_action = None
         st.session_state.last_plan      = None
         st.rerun()
+
+    previous_sessions = [
+        session_id
+        for session_id in st.session_state.session_history
+        if session_id != st.session_state.session_id
+    ]
+    if previous_sessions:
+        st.markdown("**Previous sessions**")
+        for session_id in reversed(previous_sessions):
+            saved_messages = st.session_state.session_history[session_id]["messages"]
+            preview = next(
+                (message["content"] for message in saved_messages if message["role"] == "user"),
+                "Empty session",
+            )
+            label = f"{session_id} · {preview[:28]}"
+            if st.button(label, key=f"open_{session_id}", use_container_width=True):
+                _open_session(session_id)
+                st.rerun()
 
     st.divider()
     st.markdown("**Sample Queries**")
@@ -74,54 +199,9 @@ tab_chat, tab_upload, tab_audit = st.tabs(["💬 Chat", "📁 Upload Document", 
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_chat:
 
-    # Approval gate banner (shown when a critical action is pending)
+    # Approval gate dialog (shown when a critical action is pending)
     if st.session_state.pending_action:
-        st.warning(
-            "⚠️ **Critical Action Pending Approval**\n\n"
-            "The agent wants to escalate this issue to senior IT. "
-            "Please review and approve or reject below.",
-            icon="🚨",
-        )
-        col_approve, col_reject = st.columns(2)
-        with col_approve:
-            if st.button("✅ Approve Escalation", type="primary", use_container_width=True):
-                with st.spinner("Resuming agent…"):
-                    try:
-                        r = requests.post(f"{API}/approve", json={
-                            "action_id": st.session_state.pending_action,
-                            "approved":  True,
-                        }, timeout=60)
-                        if r.status_code == 200:
-                            data = r.json()
-                            st.session_state.messages.append({
-                                "role":    "assistant",
-                                "content": data.get("answer", "Escalation executed."),
-                                "data":    data,
-                            })
-                            st.session_state.pending_action = None
-                            st.rerun()
-                        else:
-                            st.error(f"Approval failed: {r.json().get('detail', {}).get('message', r.text)}")
-                    except Exception as e:
-                        st.error(f"Could not reach API: {e}")
-        with col_reject:
-            if st.button("❌ Reject", use_container_width=True):
-                with st.spinner("Cancelling…"):
-                    try:
-                        r = requests.post(f"{API}/approve", json={
-                            "action_id": st.session_state.pending_action,
-                            "approved":  False,
-                        }, timeout=30)
-                        st.session_state.messages.append({
-                            "role":    "assistant",
-                            "content": "Escalation cancelled — no action taken.",
-                            "data":    {},
-                        })
-                        st.session_state.pending_action = None
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Could not reach API: {e}")
-        st.divider()
+        _approval_dialog()
 
     # Chat history
     for msg in st.session_state.messages:

@@ -47,6 +47,7 @@ async def handle_query(
         action      = response.action_result.action,
         reasoning   = response.plan.reasoning,
         confidence  = response.confidence,
+        answer      = response.answer,
         approved_by = (
             "pending" if response.action_result.status == "pending_approval" else None
         ),

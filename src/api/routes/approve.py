@@ -62,6 +62,7 @@ async def approve_escalation(
         action      = response.action_result.action,
         reasoning   = "User decision via POST /approve.",
         confidence  = response.confidence,
+        answer      = response.answer,
         approved_by = "user",
         status      = response.action_result.status,
     ))

@@ -17,6 +17,7 @@ _TOP_K_MEMORY = 3
 
 async def get_relevant_memory(
     query: str,
+    session_id: str,
     memory_collection: chromadb.Collection,
 ) -> list[MemoryEntry]:
     """
@@ -41,6 +42,7 @@ async def get_relevant_memory(
             query_embeddings=[embedding],
             n_results=_TOP_K_MEMORY,
             include=["documents", "metadatas", "distances"],
+            where={"session_id": session_id},
         )
         
     try:

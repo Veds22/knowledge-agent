@@ -87,7 +87,7 @@ async def chunk_file(path: Path) -> list[Chunk]:
         async with aiofiles.open(path, mode='r', encoding='utf-8') as f:
             async for line in f:
                 line = line.rstrip()
-                heading = re.match(r"^#{1,3}s+(.+)", line)
+                heading = re.match(r"^#{1,3}\s+(.+)", line)
                 if heading:
                     if buffer:
                         section_blocks.append(

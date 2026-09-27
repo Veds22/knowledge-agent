@@ -85,11 +85,6 @@ def _route_after_corrector(state: AgentState) -> str:
     return "tool_executor"
 
 
-def _route_after_hitl(state: AgentState) -> str:
-    """After HITL node: approved → synthesizer | rejected → synthesizer (with abort)."""
-    return "synthesizer"
-
-
 def build_graph():
     """
         Build and compile the LangGraph StateGraph.
@@ -110,6 +105,7 @@ def build_graph():
     builder.add_edge(START, "planner")
     builder.add_edge("planner", "tool_executor")
     builder.add_edge("synthesizer", END)
+    builder.add_edge("hitl_approval", END)
     
     # Add conditional edges after tool_executor
     builder.add_conditional_edges(
@@ -130,14 +126,6 @@ def build_graph():
             "synthesizer":   "synthesizer",
         },
     )
-    builder.add_conditional_edges(
-        "hitl_approval",
-        _route_after_hitl,
-        {
-            "synthesizer": "synthesizer",
-        },
-    )
-
     compiled = builder.compile(
         checkpointer = checkpointer,
         interrupt_before = ["hitl_approval"],

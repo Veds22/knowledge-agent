@@ -51,7 +51,7 @@ class PlanStep(BaseModel):
     tool_input: str
     status: StepStatus = StepStatus.pending
     error: str | None = None
-    result: str | None
+    result: str | None = None
     retries: int = 0
     correction: str | None = None
     
@@ -83,7 +83,7 @@ class MemoryEntry(BaseModel):
 
 class ActionResult(BaseModel):
     action: ActionName
-    success: str    # "executed" | "pending_approval" | "cancelled" | "failed"
+    status: str     # "executed" | "pending_approval" | "cancelled" | "failed"
     output:      dict[str, Any]
     executed_at: datetime = Field(default_factory=datetime.utcnow)
     
@@ -164,6 +164,7 @@ class AuditEntry(BaseModel):
     action: str
     reasoning: str
     confidence: float
+    answer: str = ""
     approved_by: str | None = None
     status: str = "completed"
  

@@ -1,4 +1,5 @@
 from functools import lru_cache
+import os
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -44,6 +45,14 @@ class Settings(BaseSettings):
     max_tool_retries: int = 2
     max_graph_iterations: int = 20
     min_confidence: float = 0.4
+    llm_timeout_seconds: float = 90.0
+    agent_timeout_seconds: float = 110.0
+
+    # LangSmith Settings
+    langsmith_tracing: bool = False
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+    langsmith_api_key: str | None = None
+    langsmith_project: str = "knowledge-agent"
     
     # Server
     host: str = "0.0.0.0"
@@ -59,3 +68,14 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def configure_langsmith(settings: Settings | None = None) -> None:
+    """Expose LangSmith settings to LangChain's process-level tracer."""
+    settings = settings or get_settings()
+    os.environ["LANGSMITH_TRACING"] = str(settings.langsmith_tracing).lower()
+    os.environ["LANGSMITH_ENDPOINT"] = settings.langsmith_endpoint
+    os.environ["LANGSMITH_PROJECT"] = settings.langsmith_project
+
+    if settings.langsmith_api_key:
+        os.environ["LANGSMITH_API_KEY"] = settings.langsmith_api_key

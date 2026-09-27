@@ -12,8 +12,8 @@ from fastapi.staticfiles import StaticFiles
 from src.api.deps import init_chroma, get_kb_collection
 from src.api.routes import audit, query, resolve, upload
 from src.api.routes.approve import router as approve_router
-from src.core.checkpointer import init_checkpointer
-from src.core.config import get_settings
+from src.core.checkpointer import init_checkpointer, close_checkpointer
+from src.core.config import configure_langsmith, get_settings
 from src.core.job_store import init_job_store
 from src.graph.graph import init_graph
 from src.graph.tools import init_tools
@@ -25,6 +25,7 @@ log = logging.getLogger("knowledge-agent.main")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    configure_langsmith(settings)
     settings.ensure_dirs()
 
     log.info("══════════════════════════════════════")
@@ -47,10 +48,9 @@ async def lifespan(app: FastAPI):
         log.critical("JobStore failed: %s", exc); sys.exit(1)
 
     try:
-        init_checkpointer()
+        await init_checkpointer()
     except RuntimeError as exc:
         log.critical("Checkpointer failed: %s", exc); sys.exit(1)
-
     try:
         init_tools(get_kb_collection())
         log.info("Tools initialised.")
@@ -66,8 +66,11 @@ async def lifespan(app: FastAPI):
     log.info("══════════════════════════════════════")
     log.info("  Ready → http://%s:%d", settings.host, settings.port)
     log.info("══════════════════════════════════════")
-    yield
-    log.info("Shutting down.")
+    try:
+        yield
+    finally:
+        await close_checkpointer()
+        log.info("Shutting down.")
 
 
 def create_app() -> FastAPI:

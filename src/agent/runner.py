@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
  
+import asyncio
 import logging
  
 import chromadb
@@ -16,7 +17,7 @@ from src.core.config import get_settings
 from src.core.schemas import (
     ActionResult, AgentResponse, PlanTrace, QueryRequest, StepStatus,
 )
-from src.graph.graph import get_graph
+from src.graph.graph import get_graph, init_graph
 from src.graph.state import AgentState
  
 log = logging.getLogger("knowledge-agent.runner")
@@ -81,7 +82,9 @@ async def run_agent(
     
     log.info("Agent run — session=%s goal='%s…'", req.session_id, req.query[:80])
  
-    memory = await get_relevant_memory(req.query, memory_collection)
+    log.info("Memory retrieval started — session=%s", req.session_id)
+    memory = await get_relevant_memory(req.query, req.session_id, memory_collection)
+    log.info("Memory retrieval complete — session=%s entries=%d", req.session_id, len(memory))
  
  
     initial_state: AgentState = {
@@ -101,18 +104,38 @@ async def run_agent(
         "should_abort": False,
     }
     
-    graph  = get_graph()
+    try:
+        graph = get_graph()
+        if graph is None:
+            log.info("Initialising LangGraph agent graph…")
+            graph = init_graph()
+    except Exception as exc:
+        log.error("Failed to initialise LangGraph agent graph: %s", exc)
+        raise RunnerError(
+            "The agent is not available at this time. Please try again later."
+        ) from exc
+            
     config = _thread_config(req.session_id)
  
     try:
-        final_state: AgentState = await graph.ainvoke(initial_state, config=config)
+        timeout = get_settings().agent_timeout_seconds
+        log.info("Graph execution started — session=%s timeout=%ss", req.session_id, timeout)
+        final_state: AgentState = await asyncio.wait_for(
+            graph.ainvoke(initial_state, config=config),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError as exc:
+        log.error("Graph execution timed out session=%s after %ss", req.session_id, timeout)
+        raise RunnerError(
+            "The agent took too long to respond. Please try again."
+        ) from exc
     except Exception as exc:
         log.exception("Graph execution failed session=%s: %s", req.session_id, exc)
         raise RunnerError(
             "The agent encountered an unexpected error. Please try again."
         ) from exc
         
-    current_node = _get_next_node(graph, config)
+    current_node = await _get_next_node(graph, config)
     if current_node == "hitl_approval":
         log.info("Graph interrupted at hitl_approval — awaiting user decision.")
         
@@ -179,13 +202,12 @@ async def resume_agent(
     config = _thread_config(session_id)
     
     try:
-        graph.update_state(
+        await graph.aupdate_state(
             config,
             {
                 "hitl_approved":    approved,
                 "hitl_approved_by": approved_by,
             },
-            as_node="hitl_approval",    # inject as if hitl_approval node set these
         )
     except Exception as exc:
         log.error("Failed to update checkpoint state for session=%s: %s", session_id, exc)
@@ -219,13 +241,13 @@ async def resume_agent(
     )
     return response
 
-def _get_next_node(graph, config: dict) -> str | None:
+async def _get_next_node(graph, config: dict) -> str | None:
     """
         Check which node the graph will run next (None if graph finished).
         Used to detect the hitl_approval interrupt after ainvoke returns.
     """
     try:
-        snapshot = graph.get_state(config)
+        snapshot = await graph.aget_state(config)
         nexts    = snapshot.next
         return nexts[0] if nexts else None
     except Exception as exc:

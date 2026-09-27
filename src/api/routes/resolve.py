@@ -76,9 +76,14 @@ async def resolve_conflicts(
             failed_ids.append(item.chunk_id)
             continue
 
-        text              = result["documents"][0]
-        meta              = result["metadatas"][0]
-        existing_embedding = result["embeddings"][0] if result.get("embeddings") else None
+        text = result["documents"][0]
+        meta = result["metadatas"][0]
+        stored_embeddings = result.get("embeddings")
+        existing_embedding = (
+            stored_embeddings[0]
+            if stored_embeddings is not None and len(stored_embeddings) > 0
+            else None
+        )
 
         # ── keep_existing: discard the new chunk ──────────────────────────────
         if item.resolution == Resolution.keep_existing:
@@ -156,6 +161,11 @@ async def resolve_conflicts(
                     ids=[cid], documents=[ft], embeddings=[emb], metadatas=[km],
                 )
             await loop.run_in_executor(None, _upsert)
+
+            def _delete_existing(cid=meta.get("conflict_with")):
+                if cid and cid != item.chunk_id:
+                    kb_collection.delete(ids=[cid])
+            await loop.run_in_executor(None, _delete_existing)
 
             def _del(pid=pending_id):
                 pending_collection.delete(ids=[pid])

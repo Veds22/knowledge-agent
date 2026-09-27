@@ -8,28 +8,30 @@ from __future__ import annotations
  
 import logging
 from pathlib import Path
+import aiosqlite
  
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
  
 from src.core.config import get_settings
  
 log = logging.getLogger("knowledge-agent.checkpointer")
  
-_checkpointer: SqliteSaver | None = None
+_connection: aiosqlite.Connection | None = None
+_checkpointer: AsyncSqliteSaver | None = None
 
-def init_checkpointer() -> SqliteSaver:
+async def init_checkpointer() -> AsyncSqliteSaver:
     """
         Initialise the SQLite checkpointer. Called once in FastAPI lifespan.
         DB file lives at chroma_path/../checkpoints.db so it's co-located
         with the rest of the runtime data.
     """
-    global _checkpointer
+    global _checkpointer, _connection
     settings = get_settings()
     db_path  = settings.chroma_path.parent / "checkpoints.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    
     try:
-        _checkpointer = SqliteSaver.from_conn_string(str(db_path))
+        _connection = await aiosqlite.connect(str(db_path))
+        _checkpointer = AsyncSqliteSaver(conn=_connection)
         log.info("Checkpointer initialised at '%s'.", db_path)
         return _checkpointer
     except Exception as exc:
@@ -40,7 +42,16 @@ def init_checkpointer() -> SqliteSaver:
         ) from exc
         
 
-def get_checkpointer() -> SqliteSaver:
+async def close_checkpointer() -> None:
+    global _checkpointer, _connection
+
+    if _connection is not None:
+        await _connection.close()
+    _connection = None
+    _checkpointer = None
+
+
+def get_checkpointer() -> AsyncSqliteSaver:
     if _checkpointer is None:
         raise RuntimeError(
             "Checkpointer not initialised. "

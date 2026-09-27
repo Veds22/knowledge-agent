@@ -6,6 +6,7 @@
 
 from __future__ import annotations
  
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -22,6 +23,21 @@ from src.graph.state import AgentState
 from src.graph.tools import ALL_TOOLS, TOOL_DESCRIPTIONS, TOOL_NAMES
  
 log = logging.getLogger("knowledge-agent.nodes")
+
+
+async def _invoke_llm(llm: ChatGroq, messages: list, stage: str):
+    timeout = get_settings().llm_timeout_seconds
+    log.info("[%s] LLM request started (timeout=%ss).", stage, timeout)
+    try:
+        response = await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout)
+    except asyncio.TimeoutError:
+        log.error("[%s] LLM request timed out after %ss.", stage, timeout)
+        raise
+    except Exception:
+        log.exception("[%s] LLM request failed.", stage)
+        raise
+    log.info("[%s] LLM response received.", stage)
+    return response
  
 def _get_llm(temperature: float = 0.2) -> ChatGroq:
     s = get_settings()
@@ -70,7 +86,7 @@ async def planner_node(state: AgentState) -> dict:
     
     memory_context = ""
     if state.get("memory"):
-        pairs = [f"Q: {m.query[:80]}\nA: {m.response[:150]}" for m in state['memory:3']]
+        pairs = [f"Q: {m.query[:80]}\nA: {m.answer[:150]}" for m in state["memory"][:3]]
         memory_context = "Prior context from memory:\n" + "\n\n".join(pairs) + "\n"
         
     system_prompt = PLANNER_SYSTEM.format(
@@ -85,7 +101,7 @@ async def planner_node(state: AgentState) -> dict:
     
     try:
         llm = _get_llm(temperature=0.1)
-        response =  await llm.ainvoke(messages)
+        response = await _invoke_llm(llm, messages, "planner")
         raw = response.content.strip()
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -116,7 +132,11 @@ async def planner_node(state: AgentState) -> dict:
             step_number  = s.get("step_number", i + 1),
             description  = s.get("description", ""),
             tool         = s.get("tool", "search_kb"),
-            tool_input   = s.get("tool_input", state["goal"]),
+            tool_input   = (
+                json.dumps(s["tool_input"])
+                if isinstance(s.get("tool_input"), (dict, list))
+                else str(s.get("tool_input", state["goal"]))
+            ),
         )
         for i, s in enumerate(data.get("steps", []))
         if s.get("tool") in TOOL_NAMES          
@@ -179,7 +199,7 @@ async def tool_executor_node(state: AgentState) -> dict:
     ]
  
     try:
-        ai_msg: AIMessage = await llm_with_tools.ainvoke(messages)
+        ai_msg: AIMessage = await _invoke_llm(llm_with_tools, messages, "executor")
  
         if not ai_msg.tool_calls:
             raise ValueError(
@@ -271,7 +291,7 @@ async def self_corrector_node(state: AgentState) -> dict:
     
     try:
         llm  = _get_llm(temperature=0.0)
-        response = await llm.ainvoke(messages)
+        response = await _invoke_llm(llm, messages, "corrector")
         data = json.loads(response.content.strip())
     except Exception as exc:
         log.error("[corrector] LLM call failed: %s — defaulting to skip.", exc)
@@ -368,7 +388,7 @@ async def synthesizer_node(state: AgentState) -> dict:
     
     try:
         llm = _get_llm(temperature=0.2)
-        response = await llm.ainvoke(messages)
+        response = await _invoke_llm(llm, messages, "synthesizer")
         data = json.loads(response.content.strip())
     except Exception as exc:
         log.error("[synthesizer] LLM call failed: %s", exc)
@@ -437,8 +457,8 @@ async def hitl_approval_node(state: AgentState) -> dict:
     }
     
     try:
-        with aiofiles.open(settings.tickets_path, "a") as f:
-            f.write(json.dumps(record) + "\n")
+        async with aiofiles.open(settings.tickets_path, "a") as f:
+            await f.write(json.dumps(record) + "\n")
         log.warning("[hitl] Escalation executed: %s approved_by=%s", escalation_id, approved_by)
     except OSError as exc:
         log.error("[hitl] Failed to write escalation record: %s", exc)
