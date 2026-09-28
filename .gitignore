@@ -2,6 +2,8 @@
 chroma_db/
 uploads/*
 !uploads/.gitkeep
+logs/
+checkpoints/
 audit_log.jsonl
 tickets.jsonl
 __pycache__/
@@ -12,5 +14,3 @@ __pycache__/
 *.egg-info/
 dist/
 .pytest_cache/
-
-checkpoints.db

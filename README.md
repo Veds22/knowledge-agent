@@ -78,7 +78,7 @@ The system is split into three layers:
 
 **Storage:**
 - **ChromaDB** — 3 isolated collections: `kb_collection`, `pending_collection`, `memory_collection`
-- **SQLite** (`checkpoints.db`) — LangGraph checkpointer; persists HITL pause state
+- **SQLite** (`checkpoints/checkpoints.db`) — LangGraph checkpointer; persists HITL pause state
 - **JSONL files** — `audit_log.jsonl`, `tickets.jsonl` — crash-safe append-only logs
 
 ---
@@ -93,7 +93,7 @@ The system is split into three layers:
 | **Vector Store** | ChromaDB (3 collections) | KB chunks, pending conflicts, long-term memory — kept isolated |
 | **Backend API** | FastAPI + Uvicorn | REST, `BackgroundTask`, SSE, lifespan events |
 | **Frontend** | Streamlit | Chat UI, plan trace, conflict resolver, audit viewer |
-| **State Persistence** | SQLite (`checkpoints.db`) | LangGraph checkpoint store — HITL pause/resume without Redis |
+| **State Persistence** | SQLite (`checkpoints/checkpoints.db`) | LangGraph checkpoint store — HITL pause/resume without Redis |
 | **Audit / Tickets** | Append-only JSONL | Simple, crash-safe, human-readable logs |
 | **Async I/O** | `aiofiles` | Non-blocking file writes for escalation + audit records |
 | **Dependency Mgmt** | `uv` | Fast Python packaging |
@@ -423,6 +423,10 @@ MAX_GRAPH_ITERATIONS=20
 TOP_K=5
 CONFLICT_THRESHOLD=0.82
 LLM_TIMEOUT_SECONDS=30
+
+# Optional log location (defaults to ./logs/knowledge-agent.log)
+LOGS_DIR=./logs
+LOG_FILE_PATH=./logs/knowledge-agent.log
 ```
 
 ### Step 2 — Install dependencies
@@ -508,7 +512,8 @@ knowledge-agent/
 │       ├── routes.py             # All route handlers
 │       └── deps.py               # Dependency injection (DB, runner…)
 ├── chroma_db/                    # ChromaDB persistent storage (auto-created)
-├── checkpoints.db                # LangGraph SQLite checkpoints (auto-created)
+├── checkpoints/                  # LangGraph SQLite checkpoints (auto-created)
+│   └── checkpoints.db
 ├── audit_log.jsonl               # Append-only action audit trail
 ├── tickets.jsonl                 # Support tickets and escalation records
 ├── .env.example

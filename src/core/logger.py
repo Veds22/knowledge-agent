@@ -2,10 +2,11 @@ import asyncio
 import json
 import logging
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
- 
+
 import aiofiles
- 
+
 from src.core.config import get_settings
 from src.core.schemas import AuditEntry
 
@@ -18,18 +19,33 @@ def setup_logging() -> None:
     fmt = "%(asctime)s | %(levelname)-8s | %(name)-35s | %(message)s"
     datefmt = "%Y-%m-%d %H:%M:%S"
     
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter(fmt, datefmt))
-    
+    formatter = logging.Formatter(fmt, datefmt)
+    settings = get_settings()
+    settings.log_file_path.parent.mkdir(parents=True, exist_ok=True)
+
     root = logging.getLogger()
     root.setLevel(logging.INFO)
-    
+
+    if not any(getattr(handler, "_knowledge_agent_console", False) for handler in root.handlers):
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        console_handler._knowledge_agent_console = True
+        root.addHandler(console_handler)
+
+    if not any(getattr(handler, "_knowledge_agent_file", False) for handler in root.handlers):
+        file_handler = RotatingFileHandler(
+            settings.log_file_path,
+            maxBytes=10 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(formatter)
+        file_handler._knowledge_agent_file = True
+        root.addHandler(file_handler)
+
     for noisy in ("chromadb", "httpx", "httpcore", "sentence_transformers", "urllib3"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
- 
-    if not root.handlers:
-        root.addHandler(handler)
-        
+
 setup_logging()
 log = logging.getLogger("knowledge-agent.logger")
 

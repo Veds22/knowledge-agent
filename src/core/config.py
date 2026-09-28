@@ -1,6 +1,7 @@
-from functools import lru_cache
 import os
+from functools import lru_cache
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,8 +18,11 @@ class Settings(BaseSettings):
     
     # Path Settings
     chroma_path: Path = Path("./chroma_db")
+    checkpoint_dir: Path = Path("./checkpoints")
     kb_path: Path = Path("./data/kb")
     upload_dir: Path = Path("./uploads")
+    logs_dir: Path = Path("./logs")
+    log_file_path: Path = Path("./logs/knowledge-agent.log")
     audit_log_path: Path = Path("./audit_log.jsonl")
     tickets_path: Path = Path("./tickets.jsonl")
     
@@ -61,7 +65,7 @@ class Settings(BaseSettings):
     
     def ensure_dirs(self) -> None:
         """Create all required directories on startup."""
-        for path in [self.chroma_path, self.upload_dir, self.kb_path]:
+        for path in [self.chroma_path, self.checkpoint_dir, self.upload_dir, self.kb_path, self.logs_dir]:
             path.mkdir(parents=True, exist_ok=True)
            
             

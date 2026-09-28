@@ -5,15 +5,14 @@
 """
 
 from __future__ import annotations
- 
+
 import logging
-from pathlib import Path
+
 import aiosqlite
- 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
- 
+
 from src.core.config import get_settings
- 
+
 log = logging.getLogger("knowledge-agent.checkpointer")
  
 _connection: aiosqlite.Connection | None = None
@@ -22,12 +21,11 @@ _checkpointer: AsyncSqliteSaver | None = None
 async def init_checkpointer() -> AsyncSqliteSaver:
     """
         Initialise the SQLite checkpointer. Called once in FastAPI lifespan.
-        DB file lives at chroma_path/../checkpoints.db so it's co-located
-        with the rest of the runtime data.
+        DB file lives in the configured checkpoint directory.
     """
     global _checkpointer, _connection
     settings = get_settings()
-    db_path  = settings.chroma_path.parent / "checkpoints.db"
+    db_path = settings.checkpoint_dir / "checkpoints.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         _connection = await aiosqlite.connect(str(db_path))
